@@ -15,9 +15,11 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { X, Upload, Loader2, Music, Video, User } from "lucide-react";
 import { DEFAULT_AVATAR } from "@shared/schema";
+import { useAuth } from "@/lib/auth";
 
 const formSchema = z.object({
   username: z.string().min(3).regex(/^[a-zA-Z0-9_]+$/),
+  password: z.string().min(6, "Password must be at least 6 characters"),
   displayName: z.string().nullable().optional(),
   bio: z.string().max(500).nullable().optional(),
   backgroundVideoMuted: z.number().optional(),
@@ -36,6 +38,7 @@ interface AssetUpload {
 export default function Customize() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { signup } = useAuth();
   
   const [profilePicture, setProfilePicture] = useState<AssetUpload>({
     file: null,
@@ -65,6 +68,7 @@ export default function Customize() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       username: "",
+      password: "",
       displayName: null,
       bio: null,
       backgroundVideoMuted: 1,
@@ -204,15 +208,27 @@ export default function Customize() {
       return;
     }
 
-    const profileData = {
-      ...data,
-      profilePicture: profilePicture.serverPath,
-      backgroundVideo: backgroundVideo.serverPath,
-      backgroundAudio: backgroundAudio.serverPath,
-      backgroundVideoMuted: data.backgroundVideoMuted ?? 1,
-    };
+    try {
+      await signup(data.username, data.password);
 
-    createProfileMutation.mutate(profileData);
+      const profileData = {
+        username: data.username,
+        displayName: data.displayName,
+        bio: data.bio,
+        profilePicture: profilePicture.serverPath,
+        backgroundVideo: backgroundVideo.serverPath,
+        backgroundAudio: backgroundAudio.serverPath,
+        backgroundVideoMuted: data.backgroundVideoMuted ?? 1,
+      };
+
+      createProfileMutation.mutate(profileData);
+    } catch (error: any) {
+      toast({
+        title: "Signup Failed",
+        description: error.message || "Failed to create account. Username may already exist.",
+        variant: "destructive",
+      });
+    }
   };
 
   const getFileExtension = (file: File | null): string => {
@@ -438,6 +454,28 @@ export default function Customize() {
                         </FormControl>
                         <FormDescription>
                           Your unique identifier
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password *</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="password"
+                            placeholder="Your password"
+                            {...field}
+                            data-testid="input-password"
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Create a secure password (min 6 characters)
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

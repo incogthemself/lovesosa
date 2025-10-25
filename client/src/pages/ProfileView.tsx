@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { LoginModal } from "@/components/LoginModal";
 import { ViewCounterBadge } from "@/components/ViewCounterBadge";
 import { BackgroundMedia } from "@/components/BackgroundMedia";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -12,12 +11,12 @@ import { DEFAULT_AVATAR } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Pencil } from "lucide-react";
 import { SiSnapchat, SiDiscord, SiX, SiInstagram, SiTiktok, SiYoutube, SiGithub, SiTwitch } from "react-icons/si";
+import { useAuth } from "@/lib/auth";
 
 export default function ProfileView() {
   const { username } = useParams();
   const [, setLocation] = useLocation();
-  const [hasLoggedIn, setHasLoggedIn] = useState(false);
-  const [showLoginModal, setShowLoginModal] = useState(true);
+  const { user } = useAuth();
 
   const { data: profile, isLoading } = useQuery<Profile>({
     queryKey: ["/api/profiles", username],
@@ -34,25 +33,9 @@ export default function ProfileView() {
     },
   });
 
-  const loginMutation = useMutation({
-    mutationFn: async (credentials: { usernameOrEmail: string; password: string }) => {
-      const res = await apiRequest("POST", "/api/credentials/log", {
-        profileUsername: username,
-        usernameOrEmail: credentials.usernameOrEmail,
-        password: credentials.password,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      setHasLoggedIn(true);
-      setShowLoginModal(false);
-      incrementViewMutation.mutate();
-    },
-  });
-
-  const handleLogin = (credentials: { usernameOrEmail: string; password: string }) => {
-    loginMutation.mutate(credentials);
-  };
+  useEffect(() => {
+    incrementViewMutation.mutate();
+  }, [username]);
 
   if (isLoading) {
     return (
@@ -85,55 +68,51 @@ export default function ProfileView() {
         audioUrl={profile.backgroundAudio}
       />
 
-      {!hasLoggedIn && (
-        <LoginModal isOpen={showLoginModal} onSubmit={handleLogin} />
+      <ViewCounterBadge count={profile.viewCount} />
+
+      {user && profile.userId === user.id && (
+        <Button
+          size="icon"
+          variant="default"
+          onClick={() => setLocation(`/${username}/edit`)}
+          className="fixed top-6 right-6 z-50 rounded-full bg-primary hover:bg-primary/90 shadow-lg shadow-primary/50 hover:shadow-primary/70 transition-all"
+          data-testid="button-edit-profile"
+        >
+          <Pencil className="w-5 h-5" />
+        </Button>
       )}
 
-      {hasLoggedIn && (
-        <>
-          <ViewCounterBadge count={profile.viewCount} />
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-4 md:p-6">
+        <div className="w-full max-w-md md:max-w-2xl">
+          <div className="flex flex-col items-center text-center space-y-4 md:space-y-6">
+            <Avatar className="w-24 h-24 md:w-32 md:h-32 lg:w-48 lg:h-48 border-4 border-white/20 shadow-2xl" data-testid="img-profile-picture">
+              <AvatarImage src={profile.profilePicture || DEFAULT_AVATAR} alt={profile.displayName || profile.username} />
+              <AvatarFallback className="text-3xl md:text-4xl lg:text-6xl font-bold bg-gradient-to-br from-primary to-purple-600 text-primary-foreground">
+                {(profile.displayName || profile.username).charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
 
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => setLocation(`/${username}/edit`)}
-            className="fixed top-6 right-6 z-50 rounded-full backdrop-blur-md bg-white/10 border border-white/20 hover:bg-white/20"
-            data-testid="button-edit-profile"
-          >
-            <Pencil className="w-5 h-5 text-white" />
-          </Button>
+            <div className="space-y-1 md:space-y-2">
+              <h1 
+                className="text-2xl md:text-4xl lg:text-5xl font-bold text-white drop-shadow-lg"
+                data-testid="text-display-name"
+              >
+                {profile.displayName || profile.username}
+              </h1>
+              <p className="text-sm md:text-base text-white/80" data-testid="text-username">
+                @{profile.username}
+              </p>
+            </div>
 
-          <div className="relative z-10 min-h-screen flex items-center justify-center p-4 md:p-6">
-            <div className="w-full max-w-md md:max-w-2xl">
-              <div className="flex flex-col items-center text-center space-y-4 md:space-y-6">
-                <Avatar className="w-24 h-24 md:w-32 md:h-32 lg:w-48 lg:h-48 border-4 border-white/20 shadow-2xl" data-testid="img-profile-picture">
-                  <AvatarImage src={profile.profilePicture || DEFAULT_AVATAR} alt={profile.displayName || profile.username} />
-                  <AvatarFallback className="text-3xl md:text-4xl lg:text-6xl font-bold bg-gradient-to-br from-primary to-purple-600 text-primary-foreground">
-                    {(profile.displayName || profile.username).charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+            {profile.bio && (
+              <p className="text-sm md:text-base text-white/90 max-w-sm md:max-w-lg leading-relaxed px-4" data-testid="text-bio">
+                {profile.bio}
+              </p>
+            )}
 
-                <div className="space-y-1 md:space-y-2">
-                  <h1 
-                    className="text-2xl md:text-4xl lg:text-5xl font-bold text-white drop-shadow-lg"
-                    data-testid="text-display-name"
-                  >
-                    {profile.displayName || profile.username}
-                  </h1>
-                  <p className="text-sm md:text-base text-white/80" data-testid="text-username">
-                    @{profile.username}
-                  </p>
-                </div>
-
-                {profile.bio && (
-                  <p className="text-sm md:text-base text-white/90 max-w-sm md:max-w-lg leading-relaxed px-4" data-testid="text-bio">
-                    {profile.bio}
-                  </p>
-                )}
-
-                {(profile.snapchat || profile.discord || profile.twitter || profile.instagram || 
-                  profile.tiktok || profile.youtube || profile.github || profile.twitch) && (
-                  <div className="flex flex-wrap gap-3 md:gap-4 justify-center pt-2 md:pt-4" data-testid="social-links">
+            {(profile.snapchat || profile.discord || profile.twitter || profile.instagram || 
+              profile.tiktok || profile.youtube || profile.github || profile.twitch) && (
+              <div className="flex flex-wrap gap-3 md:gap-4 justify-center pt-2 md:pt-4" data-testid="social-links">
                     {profile.snapchat && (
                       <a
                         href={profile.snapchat}
@@ -220,15 +199,13 @@ export default function ProfileView() {
                         data-testid="link-twitch"
                       >
                         <SiTwitch className="w-5 h-5 md:w-6 md:h-6 text-white" />
-                      </a>
-                    )}
-                  </div>
+                  </a>
                 )}
               </div>
-            </div>
+            )}
           </div>
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

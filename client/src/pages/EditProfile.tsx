@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -15,6 +15,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertProfileSchema, type Profile } from "@shared/schema";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { useAuth } from "@/lib/auth";
 
 const formSchema = insertProfileSchema.omit({ username: true }).extend({
   snapchat: z.string().optional(),
@@ -33,10 +34,13 @@ export default function EditProfile() {
   const { username } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [profilePictureFile, setProfilePictureFile] = useState<File | null>(null);
   const [backgroundVideoFile, setBackgroundVideoFile] = useState<File | null>(null);
   const [backgroundAudioFile, setBackgroundAudioFile] = useState<File | null>(null);
   const [profilePicturePreview, setProfilePicturePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const hasFormBeenInitialized = useRef(false);
 
   const { data: profile, isLoading } = useQuery<Profile>({
     queryKey: ["/api/profiles", username],
@@ -64,7 +68,7 @@ export default function EditProfile() {
   });
 
   useEffect(() => {
-    if (profile) {
+    if (profile && !hasFormBeenInitialized.current) {
       form.reset({
         displayName: profile.displayName || "",
         bio: profile.bio || "",
@@ -82,6 +86,7 @@ export default function EditProfile() {
         twitch: profile.twitch || "",
       });
       setProfilePicturePreview(profile.profilePicture || null);
+      hasFormBeenInitialized.current = true;
     }
   }, [profile, form]);
 
@@ -90,12 +95,15 @@ export default function EditProfile() {
       const res = await apiRequest("PUT", `/api/profiles/${username}`, data);
       return res.json();
     },
-    onSuccess: (data: any) => {
+    onSuccess: (updatedProfile: Profile) => {
       toast({
         title: "Profile Updated!",
         description: `Your profile has been updated successfully.`,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/profiles", username] });
+      queryClient.setQueryData(["/api/profiles", username], updatedProfile);
+      setProfilePictureFile(null);
+      setBackgroundVideoFile(null);
+      setBackgroundAudioFile(null);
       setLocation(`/${username}`);
     },
     onError: (error: any) => {
@@ -142,9 +150,20 @@ export default function EditProfile() {
     const file = e.target.files?.[0];
     if (file) {
       setProfilePictureFile(file);
-      const base64 = await handleFileToBase64(file);
-      form.setValue("profilePicture", base64, { shouldValidate: true, shouldDirty: true });
-      setProfilePicturePreview(base64);
+      setIsUploading(true);
+      try {
+        const base64 = await handleFileToBase64(file);
+        form.setValue("profilePicture", base64, { shouldValidate: true, shouldDirty: true });
+        setProfilePicturePreview(base64);
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to process profile picture",
+          variant: "destructive",
+        });
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
@@ -152,8 +171,19 @@ export default function EditProfile() {
     const file = e.target.files?.[0];
     if (file) {
       setBackgroundVideoFile(file);
-      const base64 = await handleFileToBase64(file);
-      form.setValue("backgroundVideo", base64, { shouldValidate: true, shouldDirty: true });
+      setIsUploading(true);
+      try {
+        const base64 = await handleFileToBase64(file);
+        form.setValue("backgroundVideo", base64, { shouldValidate: true, shouldDirty: true });
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to process background video",
+          variant: "destructive",
+        });
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
@@ -161,8 +191,19 @@ export default function EditProfile() {
     const file = e.target.files?.[0];
     if (file) {
       setBackgroundAudioFile(file);
-      const base64 = await handleFileToBase64(file);
-      form.setValue("backgroundAudio", base64, { shouldValidate: true, shouldDirty: true });
+      setIsUploading(true);
+      try {
+        const base64 = await handleFileToBase64(file);
+        form.setValue("backgroundAudio", base64, { shouldValidate: true, shouldDirty: true });
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to process background audio",
+          variant: "destructive",
+        });
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
@@ -183,6 +224,24 @@ export default function EditProfile() {
             <p className="text-muted-foreground">
               The profile @{username} doesn't exist.
             </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (user && profile.userId !== user.id) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <h2 className="text-2xl font-bold mb-2">Access Denied</h2>
+            <p className="text-muted-foreground">
+              You can only edit your own profile.
+            </p>
+            <Button onClick={() => setLocation(`/${username}`)} className="mt-4">
+              Go Back
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -506,10 +565,15 @@ export default function EditProfile() {
                   <Button
                     type="submit"
                     className="flex-1 h-12 text-base font-semibold bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 shadow-lg"
-                    disabled={updateProfileMutation.isPending}
+                    disabled={updateProfileMutation.isPending || isUploading}
                     data-testid="button-save"
                   >
-                    {updateProfileMutation.isPending ? (
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        Processing Files...
+                      </>
+                    ) : updateProfileMutation.isPending ? (
                       <>
                         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                         Saving...

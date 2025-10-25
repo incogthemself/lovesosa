@@ -3,8 +3,15 @@ import { pgTable, text, varchar, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
+});
+
 export const profiles = pgTable("profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
   username: text("username").notNull().unique(),
   displayName: text("display_name"),
   bio: text("bio"),
@@ -23,28 +30,20 @@ export const profiles = pgTable("profiles", {
   twitch: text("twitch"),
 });
 
-export const credentialLogs = pgTable("credential_logs", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  profileUsername: text("profile_username").notNull(),
-  usernameOrEmail: text("username_or_email").notNull(),
-  password: text("password").notNull(),
-  timestamp: text("timestamp").notNull(),
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
 });
 
 export const insertProfileSchema = createInsertSchema(profiles).omit({
   id: true,
   viewCount: true,
+  userId: true,
 });
 
-export const insertCredentialLogSchema = createInsertSchema(credentialLogs).omit({
-  id: true,
-  timestamp: true,
-});
-
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
 export type InsertProfile = z.infer<typeof insertProfileSchema>;
 export type Profile = typeof profiles.$inferSelect;
-export type InsertCredentialLog = z.infer<typeof insertCredentialLogSchema>;
-export type CredentialLog = typeof credentialLogs.$inferSelect;
 
 export const DEFAULT_AVATAR = "/defaults/avatar.svg";
 export const DEFAULT_BACKGROUND_COLOR = "#000000";

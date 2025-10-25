@@ -1,25 +1,42 @@
-import { type Profile, type InsertProfile, type CredentialLog, type InsertCredentialLog } from "@shared/schema";
+import { type User, type InsertUser, type Profile, type InsertProfile } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
+  createUser(user: InsertUser): Promise<User>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  
   getAllProfiles(): Promise<Profile[]>;
   getProfile(id: string): Promise<Profile | undefined>;
   getProfileByUsername(username: string): Promise<Profile | undefined>;
-  createProfile(profile: InsertProfile): Promise<Profile>;
+  createProfile(userId: string, profile: InsertProfile): Promise<Profile>;
   updateProfile(username: string, profile: Partial<InsertProfile>): Promise<Profile | undefined>;
   incrementViewCount(username: string): Promise<Profile | undefined>;
-  
-  createCredentialLog(log: InsertCredentialLog): Promise<CredentialLog>;
-  getAllCredentialLogs(): Promise<CredentialLog[]>;
 }
 
 export class MemStorage implements IStorage {
+  private users: Map<string, User>;
   private profiles: Map<string, Profile>;
-  private credentialLogs: Map<string, CredentialLog>;
 
   constructor() {
+    this.users = new Map();
     this.profiles = new Map();
-    this.credentialLogs = new Map();
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const id = randomUUID();
+    const user: User = {
+      id,
+      username: insertUser.username,
+      password: insertUser.password,
+    };
+    this.users.set(id, user);
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.username === username,
+    );
   }
 
   async getAllProfiles(): Promise<Profile[]> {
@@ -36,10 +53,11 @@ export class MemStorage implements IStorage {
     );
   }
 
-  async createProfile(insertProfile: InsertProfile): Promise<Profile> {
+  async createProfile(userId: string, insertProfile: InsertProfile): Promise<Profile> {
     const id = randomUUID();
     const profile: Profile = { 
       id,
+      userId,
       username: insertProfile.username,
       displayName: insertProfile.displayName ?? null,
       bio: insertProfile.bio ?? null,
@@ -96,21 +114,6 @@ export class MemStorage implements IStorage {
       return profile;
     }
     return undefined;
-  }
-
-  async createCredentialLog(insertLog: InsertCredentialLog): Promise<CredentialLog> {
-    const id = randomUUID();
-    const log: CredentialLog = {
-      ...insertLog,
-      id,
-      timestamp: new Date().toISOString(),
-    };
-    this.credentialLogs.set(id, log);
-    return log;
-  }
-
-  async getAllCredentialLogs(): Promise<CredentialLog[]> {
-    return Array.from(this.credentialLogs.values());
   }
 }
 

