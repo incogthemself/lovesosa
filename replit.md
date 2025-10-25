@@ -2,7 +2,26 @@
 
 ## Overview
 
-A customizable profile viewing platform inspired by guns.lol, featuring immersive dark UI, full-screen background videos, music integration, and real-time view tracking. Users can create and edit personalized profiles with multimedia backgrounds (including animated GIFs), social media links, and track visitor engagement. The platform includes a credential logging system that captures login attempts on profile pages.
+A customizable profile viewing platform inspired by guns.lol, featuring immersive dark UI, full-screen background videos, music integration, and real-time view tracking. Users can create and edit personalized profiles with multimedia backgrounds (including animated GIFs) and social media links. The platform includes a secure authentication system with bcrypt password hashing and session-based user tracking.
+
+## Recent Changes (October 25, 2025)
+
+### Authentication & Security Overhaul
+- ✅ Implemented full authentication system with express-session and bcrypt password hashing
+- ✅ All passwords hashed with bcrypt (10 salt rounds) - never stored in plaintext
+- ✅ Session-based authentication for logged-in user tracking
+- ✅ Backend authorization: profile creation/editing routes require authentication and verify ownership
+- ✅ Edit button now only visible to profile owners (bright primary color for visibility)
+- ✅ Removed credential logging system completely (security fix)
+- ✅ Login/Signup pages with proper validation and error handling
+- ✅ AuthProvider context for frontend authentication state management
+
+### Profile Editing Improvements
+- ✅ Fixed file upload flow: form submission disabled until all uploads complete
+- ✅ All profile fields (display name, username, bio, media files) save together in one request
+- ✅ Fixed auto-refresh issue: form only resets on initial load, not after successful save
+- ✅ Mutations return updated profile for immediate UI refresh without page reload
+- ✅ Upload state tracking prevents partial saves when files are still uploading
 
 ## Recent Changes (October 23, 2025)
 
